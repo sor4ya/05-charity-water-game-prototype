@@ -225,6 +225,81 @@ function selectRandomCountry() {
 
 selectRandomCountry(); // Call the function to select a country when the page loads
 
+// Helper function to show feedback for invalid guesses
+function showInvalidGuessFeedback() {
+  // Add a red border to the input
+  countryInput.style.border = '2px solid red';
+  // Show a message below the input (create if not exists)
+  let feedback = document.getElementById('guessFeedback');
+  if (!feedback) {
+    feedback = document.createElement('div');
+    feedback.id = 'guessFeedback';
+    feedback.style.color = 'red';
+    feedback.style.marginTop = '5px';
+    countryInput.parentNode.appendChild(feedback);
+  }
+  feedback.textContent = 'Not a valid country. Please try again.';
+}
+
+// Helper function to clear feedback
+function clearGuessFeedback() {
+  countryInput.style.border = '';
+  const feedback = document.getElementById('guessFeedback');
+  if (feedback) {
+    feedback.textContent = '';
+  }
+}
+
+// Store GeoJSON data and map layer for highlighting
+let geojsonLayer = null;
+let geojsonData = null;
+
+// Helper: Find a country feature by name (case-insensitive)
+function findCountryFeature(name) {
+  if (!geojsonData) return null;
+  return geojsonData.features.find(f => {
+    // Some country names in GeoJSON may differ slightly, so we use loose matching
+    return f.properties.name && f.properties.name.toLowerCase() === name.toLowerCase();
+  });
+}
+
+// Helper: Get proximity color
+function getProximityColor(distance) {
+  // 0 = correct, 1 = adjacent, 2 = close, 3 = medium, 4 = far, 5+ = very far
+  if (distance === 0) return '#4FCB53'; // green
+  if (distance === 1) return '#B71C1C'; // dark red
+  if (distance === 2) return '#F44336'; // red
+  if (distance === 3) return '#FF9800'; // orange
+  if (distance === 4) return '#FFC907'; // yellow
+  return '#fff'; // white
+}
+
+// Helper: Calculate proximity (very basic for beginners)
+function getCountryProximity(guessName, correctName) {
+  // If correct
+  if (guessName.toLowerCase() === correctName.toLowerCase()) return 0;
+  // If adjacent (shares a border)
+  const guessFeature = findCountryFeature(guessName);
+  const correctFeature = findCountryFeature(correctName);
+  if (!guessFeature || !correctFeature) return 5; // very far if not found
+  // Check if they are neighbors (using GeoJSON neighbors property if available)
+  // For beginners, we use bounding box overlap as a simple proxy for adjacency
+  const g = guessFeature.bbox || guessFeature.geometry && L.geoJSON(guessFeature).getBounds();
+  const c = correctFeature.bbox || correctFeature.geometry && L.geoJSON(correctFeature).getBounds();
+  if (g && c && L.latLngBounds(g).intersects(L.latLngBounds(c))) return 1;
+  // Otherwise, use distance between centroids
+  const guessCenter = L.geoJSON(guessFeature).getBounds().getCenter();
+  const correctCenter = L.geoJSON(correctFeature).getBounds().getCenter();
+  const dist = guessCenter.distanceTo(correctCenter) / 1000; // in km
+  if (dist < 1000) return 2; // close
+  if (dist < 3000) return 3; // medium
+  if (dist < 6000) return 4; // far
+  return 5; // very far
+}
+
+// Store guessed country names for coloring
+const guessedCountries = [];
+
 // When the Guess button is clicked
 guessBtn.addEventListener("click", () => {
   // Get the value from the input and remove extra spaces
@@ -236,10 +311,45 @@ guessBtn.addEventListener("click", () => {
     return;
   }
 
+  // Check if the guess is a valid country in the list (case-insensitive)
+  const isValidCountry = countries.some(country => country.name.toLowerCase() === guess.toLowerCase());
+  if (!isValidCountry) {
+    showInvalidGuessFeedback();
+    return; // Do not add to guess list or clear input
+  }
+  clearGuessFeedback();
+
+  // Add guess to guessedCountries for coloring
+  guessedCountries.push(guess);
+
   // Create a new list item for the guess
   const listItem = document.createElement("li");
   listItem.textContent = guess;
   guessesList.appendChild(listItem);
+
+  // Highlight guessed countries on the map
+  if (geojsonLayer) {
+    geojsonLayer.setStyle(feature => {
+      // If this country was guessed, color by proximity
+      const guessed = guessedCountries.find(name => name.toLowerCase() === feature.properties.name.toLowerCase());
+      if (guessed) {
+        const proximity = getCountryProximity(guessed, correctCountry);
+        return {
+          color: '#333',
+          weight: 2,
+          fillColor: getProximityColor(proximity),
+          fillOpacity: 0.8
+        };
+      }
+      // Default style
+      return {
+        color: '#2E9DF7',
+        weight: 1,
+        fillColor: '#4FCB53',
+        fillOpacity: 0.5
+      };
+    });
+  }
 
   // Check if the guess is correct
   if (guess.toLowerCase() === correctCountry.toLowerCase()) {
@@ -247,7 +357,15 @@ guessBtn.addEventListener("click", () => {
     // Optionally, you can reset the game or select a new country
     selectRandomCountry();
     guessesList.innerHTML = ""; // Clear previous guesses
-  } 
+    guessedCountries.length = 0; // Clear guessed countries
+    // Reset map coloring
+    if (geojsonLayer) geojsonLayer.setStyle({
+      color: '#2E9DF7',
+      weight: 1,
+      fillColor: '#4FCB53',
+      fillOpacity: 0.5
+    });
+  }
 
   // Clear the input field for the next guess
   countryInput.value = "";
@@ -291,9 +409,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // This uses a free GeoJSON file from a CDN
   fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
     .then(response => response.json())
-    .then(geojsonData => {
-      // Add the GeoJSON layer to the map
-      L.geoJSON(geojsonData, {
+    .then(data => {
+      geojsonData = data; // Store for later
+      geojsonLayer = L.geoJSON(geojsonData, {
         style: {
           color: '#2E9DF7', // Charity: water blue
           weight: 1,
