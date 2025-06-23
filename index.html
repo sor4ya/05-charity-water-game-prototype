@@ -19,7 +19,7 @@
       <!-- Toggle for unlimited/daily mode -->
       <label>
         <input type="checkbox" id="modeSwitch"/>
-        Unlimited
+        Blitz Mode
       </label>
     </div>
     <button class="give-btn">GIVE 💧</button>
@@ -50,6 +50,16 @@
       </div>
     </main>
   </div>
+
+  <!-- Popup for game results -->
+  <div class="popup-overlay" id="popupOverlay" style="display: none;">
+    <div class="popup">
+      <h2 id="popupTitle"></h2>
+      <p id="popupMessage"></p>
+      <button class="close-btn" id="popupCloseBtn">Close</button>
+    </div>
+  </div>
+
   <!-- Add Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js" defer></script>
   <!-- Script at end for best practice -->

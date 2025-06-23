@@ -3,6 +3,12 @@ const guessBtn = document.getElementById("guessBtn");
 const countryInput = document.getElementById("countryInput");
 const guessesList = document.getElementById("guessesList");
 
+// Get references to popup elements
+const popupOverlay = document.getElementById("popupOverlay");
+const popupTitle = document.getElementById("popupTitle");
+const popupMessage = document.getElementById("popupMessage");
+const popupCloseBtn = document.getElementById("popupCloseBtn");
+
 let correctCountry = ''; // The country to guess, can be changed
 
 // Pool of countries to guess from and flag URLs
@@ -196,7 +202,7 @@ const countries = [
   { name: "Tanzania", flag: "https://flagcdn.com/tz.svg" },
   { name: "Ukraine", flag: "https://flagcdn.com/ua.svg" },
   { name: "Uganda", flag: "https://flagcdn.com/ug.svg" },
-  { name: "United States of America", flag: "https://flagcdn.com/us.svg" },
+  { name: "United States", flag: "https://flagcdn.com/us.svg" },
   { name: "Uruguay", flag: "https://flagcdn.com/uy.svg" },
   { name: "Uzbekistan", flag: "https://flagcdn.com/uz.svg" },
   { name: "Vatican City State (Holy See)", flag: "https://flagcdn.com/va.svg" },
@@ -223,7 +229,22 @@ function selectRandomCountry() {
   flagImg.alt = `Flag of ${correctCountry}`;
 }
 
-selectRandomCountry(); // Call the function to select a country when the page loads
+// The call to selectRandomCountry() is removed from here to allow resetGame() to set the initial state.
+
+// Helper function to show the popup with a custom message
+function showPopup(title, message) {
+  popupTitle.textContent = title;
+  popupMessage.textContent = message;
+  popupOverlay.style.display = "flex";
+}
+
+// Helper function to hide the popup
+function hidePopup() {
+  popupOverlay.style.display = "none";
+}
+
+// Add event listener to the popup close button
+popupCloseBtn.addEventListener("click", hidePopup);
 
 // Helper function to show feedback for invalid guesses
 function showInvalidGuessFeedback() {
@@ -300,34 +321,115 @@ function getCountryProximity(guessName, correctName) {
 // Store guessed country names for coloring
 const guessedCountries = [];
 
+// Mode settings
+let mode = "daily"; // Default mode
+let score = 0; // Score for blitz mode
+let timer = null; // Timer for blitz mode
+
+// Reference to mode switch checkbox
+const modeSwitch = document.getElementById("modeSwitch");
+
+// Daily mode country (fixed for the day)
+const dailyCountry = "Bolivia"; // Example fixed country
+
+// Update mode based on toggle
+modeSwitch.addEventListener("change", () => {
+  mode = modeSwitch.checked ? "blitz" : "daily";
+  resetGame();
+});
+
+// Reset the game based on the selected mode
+function resetGame() {
+  clearInterval(timer); // Clear any existing timer
+
+  // Remove score and timer displays if they exist
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  if (scoreDisplay) scoreDisplay.remove();
+  const timerDisplay = document.getElementById('timerDisplay');
+  if (timerDisplay) timerDisplay.remove();
+
+  score = 0; // Reset score
+  guessesList.innerHTML = ""; // Clear guesses
+  guessedCountries.length = 0; // Clear guessed countries
+  clearGuessFeedback();
+  countryInput.disabled = false;
+  guessBtn.disabled = false;
+
+  if (mode === "daily") {
+    correctCountry = dailyCountry; // Set the fixed daily country
+    const flagImg = document.getElementById("countryFlag");
+    const dailyCountryData = countries.find(c => c.name === dailyCountry);
+    if (dailyCountryData) {
+        flagImg.src = dailyCountryData.flag;
+        flagImg.alt = `Flag of ${dailyCountry}`;
+    }
+  } else {
+    // Create and display score for blitz mode
+    const newScoreDisplay = document.createElement('div');
+    newScoreDisplay.id = 'scoreDisplay';
+    newScoreDisplay.style.fontWeight = 'bold';
+    newScoreDisplay.style.marginTop = '10px';
+    newScoreDisplay.textContent = `Score: ${score}`;
+    countryInput.parentNode.appendChild(newScoreDisplay);
+
+    selectRandomCountry(); // Pick a random country for blitz mode
+    startTimer(); // Start the 5-minute timer
+  }
+}
+
+// Start the 30 seconds timer for blitz mode
+function startTimer() {
+  let timeLeft = 30; // 30 seconds
+  const timerDisplay = document.createElement("div");
+  timerDisplay.id = "timerDisplay";
+  timerDisplay.style.marginTop = "10px";
+  timerDisplay.style.fontWeight = "bold";
+  countryInput.parentNode.appendChild(timerDisplay);
+
+  timer = setInterval(() => {
+    timeLeft--;
+    const seconds = timeLeft % 60;
+    timerDisplay.textContent = `Time left: ${seconds}`;
+
+    if (timeLeft <= 0) {
+      clearInterval(timer);
+      showPopup("Time's Up!", `You ran out of time. Your final score is ${score}.`);
+      resetGame();
+    }
+  }, 1000);
+}
+
 // When the Guess button is clicked
 guessBtn.addEventListener("click", () => {
-  // Get the value from the input and remove extra spaces
   const guess = countryInput.value.trim();
 
-  // Check if the input is empty
   if (guess === "") {
-    alert("Please enter a country name.");
+    return; // Do nothing if the input is empty
+  }
+
+  const isValidCountry = countries.some(country => country.name.toLowerCase() === guess.toLowerCase());
+  const scoreDisplay = document.getElementById('scoreDisplay');
+
+  if (!isValidCountry) {
+    showInvalidGuessFeedback();
+    if (mode === "blitz") {
+        score -= 25;
+        if (scoreDisplay) scoreDisplay.textContent = `Score: ${score}`;
+    }
     return;
   }
 
-  // Check if the guess is a valid country in the list (case-insensitive)
-  const isValidCountry = countries.some(country => country.name.toLowerCase() === guess.toLowerCase());
-  if (!isValidCountry) {
-    showInvalidGuessFeedback();
-    return; // Do not add to guess list or clear input
-  }
   clearGuessFeedback();
 
-  // Add guess to guessedCountries for coloring
+  // Add the guess to the list of guessed countries for map highlighting
   guessedCountries.push(guess);
 
-  // Create a new list item for the guess
+  // Add the guess to the visual list
   const listItem = document.createElement("li");
   listItem.textContent = guess;
   guessesList.appendChild(listItem);
 
-  // Highlight guessed countries on the map
+  // Highlight guessed countries on the map for both modes
   if (geojsonLayer) {
     geojsonLayer.setStyle(feature => {
       // If this country was guessed, color by proximity
@@ -351,20 +453,31 @@ guessBtn.addEventListener("click", () => {
     });
   }
 
-  // Check if the guess is correct
-  if (guess.toLowerCase() === correctCountry.toLowerCase()) {
-    alert(`Congratulations! You guessed the correct country: ${correctCountry}`);
-    // Optionally, you can reset the game or select a new country
-    selectRandomCountry();
-    guessesList.innerHTML = ""; // Clear previous guesses
-    guessedCountries.length = 0; // Clear guessed countries
-    // Reset map coloring
-    if (geojsonLayer) geojsonLayer.setStyle({
-      color: '#2E9DF7',
-      weight: 1,
-      fillColor: '#4FCB53',
-      fillOpacity: 0.5
-    });
+  if (mode === "daily") {
+    if (guess.toLowerCase() === correctCountry.toLowerCase()) {
+      showPopup("Congratulations!", `You guessed the daily country: ${correctCountry}`);
+      countryInput.disabled = true; // Disable further input
+      guessBtn.disabled = true; // Disable the button
+    }
+    // For incorrect guesses, we've already added it to the list and colored the map.
+  } else { // This is blitz mode
+    // Check if the guess is correct
+    if (guess.toLowerCase() === correctCountry.toLowerCase()) {
+      score += 100; // Add points for correct guess
+      selectRandomCountry(); // Pick a new country
+      guessesList.innerHTML = ""; // Clear previous guesses
+      guessedCountries.length = 0; // Clear guessed countries
+      // Reset map coloring
+      if (geojsonLayer) geojsonLayer.setStyle({
+        color: '#2E9DF7',
+        weight: 1,
+        fillColor: '#4FCB53',
+        fillOpacity: 0.5
+      });
+    } else {
+      score -= 25; // Deduct points for incorrect guess
+    }
+    if (scoreDisplay) scoreDisplay.textContent = `Score: ${score}`;
   }
 
   // Clear the input field for the next guess
@@ -415,10 +528,13 @@ window.addEventListener('DOMContentLoaded', () => {
         style: {
           color: '#2E9DF7', // Charity: water blue
           weight: 1,
-          fillColor: '#4FCB53', // Charity: water green
+          fillColor: '#4fcb53', // Charity: water green
           fillOpacity: 0.5
         }
       }).addTo(map);
     });
 });
+
+// Initialize the game on page load to set the correct mode and country
+resetGame();
 
